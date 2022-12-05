@@ -1,13 +1,8 @@
-
-
 import numpy as np
 import csv
 from datetime import datetime
 import pytz
 import json
-
-
-
 
 def FUNCTION_LOG_VOTER_DICT_WITH_FILE_ID_DICT(vote_type, testing=False):
     print(f"CURRENTLY TESTING? : {testing}")
@@ -31,9 +26,7 @@ def FUNCTION_LOG_VOTER_DICT_WITH_FILE_ID_DICT(vote_type, testing=False):
             results_array = GET_ALL_VOTES_BY_FILE_ID_TYPED(key, vote_type)
             results_array.insert(0, uploader) # insert uploader to 0 so they get 50% by default
             value['ORDER'] = results_array
-            
-
-            
+                        
             # REPLYING TO LOGIC
             original_replying_to_user = GET_REPLYING_TO(key)
             if original_replying_to_user != "None":
@@ -60,8 +53,6 @@ def FUNCTION_LOG_VOTER_DICT_WITH_FILE_ID_DICT(vote_type, testing=False):
 
     UPDATE_BALANCES_TYPED(vote_type, non_equity_dict, testing)
     
-
-
 def GET_FREQUENCY_DICT_TYPED(my_vote_type):
     dataset_array = GET_ALL_TYPED(my_vote_type)
     freq_array = []
@@ -108,32 +99,8 @@ def GET_FREQUENCY_DICT_TYPED(my_vote_type):
     new_dict["EQUITY"] = BROKEN_ROUNDING(total_capital_for_equity)
     new_dict["SEARCH"] = BROKEN_ROUNDING(total_capital_for_search)
     return new_dict
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        
-
-
-
-
-
-def UPDATE_BALANCES_TYPED(vote_type, update_dict, testing=False):
-
-    
+ 
+def UPDATE_BALANCES_TYPED(vote_type, update_dict, testing=False):    
     all_temp_dicts = {}
     
     FINAL_DICT = {} 
@@ -242,8 +209,6 @@ def PURE_LOG_DISTRIBUTION(TOTAL, my_array):
 def BROKEN_ROUNDING(my_float):
   #truly too embarrassing to show anyone this
   
-
-
 def EQUAL_DISTRIBUTION(TOTAL, my_array):
     array_length = len(my_array)
     each = BROKEN_ROUNDING(TOTAL / array_length)
@@ -265,7 +230,6 @@ def EQUAL_DISTRIBUTION(TOTAL, my_array):
         new_dict[key] = BROKEN_ROUNDING(value)
         new_sum  += value
     return new_dict
-
 
 def SECTIONED_EQUAL_DISTRIBUTION(TOTAL, my_array, sections=2):
     """
@@ -343,9 +307,3 @@ def CREATE_SEARCH_VOTE_FREQUNCY_DICT():
         value['PERCENTAGE'] = percentage
     
     return search_vote_freq_dict
-
-
-
-
-
-
