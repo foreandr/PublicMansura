@@ -1,0 +1,351 @@
+
+
+import numpy as np
+import csv
+from datetime import datetime
+import pytz
+import json
+
+
+
+
+def FUNCTION_LOG_VOTER_DICT_WITH_FILE_ID_DICT(vote_type, testing=False):
+    print(f"CURRENTLY TESTING? : {testing}")
+    #print()
+    #print("FUNCTION_LOG_VOTER_DICT_WITH_FILE_ID_DICT")
+    
+    conn = connection.test_connection()
+    cursor = conn.cursor()
+    my_dict = GET_FREQUENCY_DICT_TYPED(vote_type)
+    #print(my_dict[4])
+    
+    non_equity_dict = {}
+    for key, value in my_dict.items():        
+        if key != "MANSURA" and key != "SEARCH":
+            value = {
+                "VALUE":value, 
+                "ORDER":None,
+                }
+               
+            uploader = GET_UPLOADER_OF_FILE_BY_ID(key)
+            results_array = GET_ALL_VOTES_BY_FILE_ID_TYPED(key, vote_type)
+            results_array.insert(0, uploader) # insert uploader to 0 so they get 50% by default
+            value['ORDER'] = results_array
+            
+
+            
+            # REPLYING TO LOGIC
+            original_replying_to_user = GET_REPLYING_TO(key)
+            if original_replying_to_user != "None":
+                n_percent = float(BROKEN_ROUNDING(value["VALUE"]["AMOUNT"])) * 0.10
+                #print(n_percent) 
+                value["VALUE"]["AMOUNT"] = BROKEN_ROUNDING(float(value["VALUE"]["AMOUNT"]) - n_percent)
+                value["REPLY"] = {
+                    "REPLYING_TO": original_replying_to_user,
+                    "AMOUNT": BROKEN_ROUNDING(n_percent)
+                }
+
+            # RATIO LOGIC
+            ratio_file_id = CHECK_FOR_HIGHEST_RATIO(key, vote_type)
+            if ratio_file_id !="None":
+                n_percent = BROKEN_ROUNDING(value["VALUE"]["AMOUNT"]) * 0.10
+                value["VALUE"]["AMOUNT"] = BROKEN_ROUNDING(float(value["VALUE"]["AMOUNT"]) - n_percent)
+                #print(ratio_file_id)
+                value["RATIO"] = {
+                        F'{GET_USERNAME_BY_FILE_ID(ratio_file_id)}': BROKEN_ROUNDING(n_percent)
+                }
+            non_equity_dict[key] = value
+        else:
+            non_equity_dict[key] = value
+
+    UPDATE_BALANCES_TYPED(vote_type, non_equity_dict, testing)
+    
+
+
+def GET_FREQUENCY_DICT_TYPED(my_vote_type):
+    dataset_array = GET_ALL_TYPED(my_vote_type)
+    freq_array = []
+    for i in dataset_array:
+        freq_array.append(i[0])
+    
+    freq = CountFrequency(freq_array)
+    new_dict = {}
+
+    equity_percentage = 0
+    if my_vote_type == "Daily":
+        equity_percentage = 0.20
+    elif my_vote_type == "Monthly":
+        equity_percentage = 0.20
+    elif my_vote_type == "Yearly":
+        equity_percentage = 0.20
+    search_equity_percentage = 0.20
+
+    total_vote_count_typed = GET_TOTAL_VOTE_COUNT(my_vote_type)
+    total_capital_typed = GET_TYPED_PAYOUT( my_vote_type)
+      
+    
+    total_capital_for_search = total_capital_typed * search_equity_percentage
+    total_capital_for_equity = total_capital_typed * equity_percentage
+    #print("t1search", total_capital_for_search, search_equity_percentage)
+    #print("t2global", total_capital_for_equity, equity_percentage)
+      
+    total_capital_typed = total_capital_typed - (total_capital_for_equity + total_capital_for_search)
+    
+    print(F"VOTE TYPE : {my_vote_type}")
+    
+    for key, value in freq.items():        
+        value = {"VOTES":value, 
+                "PERCENT":"", 
+                "AMOUNT": ""
+                }
+        
+        value["PERCENT"] =  (value["VOTES"] / total_vote_count_typed) * 100
+        value["AMOUNT"] = BROKEN_ROUNDING(value["PERCENT"] * total_capital_typed / 100) 
+        value["PERCENT"] =  "".join(("%", str(value["PERCENT"])))
+
+        new_dict[key] = value
+    
+    new_dict["EQUITY"] = BROKEN_ROUNDING(total_capital_for_equity)
+    new_dict["SEARCH"] = BROKEN_ROUNDING(total_capital_for_search)
+    return new_dict
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+
+
+
+
+
+def UPDATE_BALANCES_TYPED(vote_type, update_dict, testing=False):
+
+    
+    all_temp_dicts = {}
+    
+    FINAL_DICT = {} 
+    for key, value in update_dict.items():
+        if key != "EQUITY" and key != "SEARCH":
+            name_array = value['ORDER']            
+            dataset_id_total_capital = (value['VALUE']['AMOUNT'])    
+            ALGO = GET_DISTRO_ALGO_BY_FILE_ID(key)
+
+            if ALGO[0] == "EQUAL DISTRIBUTION":
+                temp_dict = EQUAL_DISTRIBUTION(float(dataset_id_total_capital), name_array)
+            elif ALGO[0] == "LOG DISTRIBUTION": 
+                temp_dict = PURE_LOG_DISTRIBUTION(float(dataset_id_total_capital), name_array) 
+            elif ALGO[0] == "LOG EQUAL DISTRIBUTION":
+                temp_dict = SECTIONED_EQUAL_DISTRIBUTION(float(dataset_id_total_capital), name_array, float(ALGO[1]))
+            else:
+                temp_dict = EQUAL_DISTRIBUTION(float(dataset_id_total_capital), name_array)
+            
+            all_temp_dicts[key] = {
+                "ORDER":temp_dict,
+                "VALUE":value,
+            }         
+            if "REPLY" in value:
+                name = value["REPLY"]['REPLYING_TO']
+                if value["REPLY"]['REPLYING_TO'] not in FINAL_DICT:
+                    FINAL_DICT[value["REPLY"]['REPLYING_TO']] = BROKEN_ROUNDING(float(value["REPLY"]['AMOUNT']))
+                else:                
+                    FINAL_DICT[value['REPLY']['REPLYING_TO']] += BROKEN_ROUNDING(float(value['REPLY']['AMOUNT']))
+
+            # RATIO DETIALS
+            if "RATIO" in value:
+                username = str((list(value["RATIO"].keys())[0]))
+            
+                my_value = value["RATIO"][username]
+                if username not in FINAL_DICT:
+                    FINAL_DICT[username] = BROKEN_ROUNDING(my_value)  
+                    #print("CREATE", FINAL_DICT[username])
+                else:
+                    #print("BEFORE", FINAL_DICT[username])
+                    FINAL_DICT[username] += BROKEN_ROUNDING(my_value)  
+        elif key == "EQUITY":
+            equity_dict = GET_ALL_EQUITY_HOLDERS()
+            FINAL_DICT[key] = {
+                "AMOUNT": value,
+                "EQUITY":equity_dict 
+            }
+        elif key == "SEARCH":
+
+            search_dict = CREATE_SEARCH_VOTE_FREQUNCY_DICT()
+            total_search_equity = value
+            
+            dict_of_search_details = {}
+            log_function(msg_type="distro", log_string="\nSEARCH", vote_type=vote_type, distro_type="initial")
+            for key__, value__ in search_dict.items():
+                #print("SEARCH", key__, value__)
+                dollar_amount = total_search_equity * value__['PERCENTAGE']
+                amount_for_creator = BROKEN_ROUNDING(dollar_amount / 2) #creator half
+                dollar_amount -= amount_for_creator
+                log_string = f"[{total_search_equity * value__['PERCENTAGE']}]:{str(value__)} "
+                log_function(msg_type="distro", log_string=log_string, vote_type=vote_type, distro_type="initial")
+                creator = value__["SEARCH_CREATOR"]
+                for i in value__["SEARCHERS_LIST"]:
+                    dict_of_search_details[i] = BROKEN_ROUNDING(dollar_amount / len(value__["SEARCHERS_LIST"]))
+                dict_of_search_details[creator] = amount_for_creator
+            
+            FINAL_DICT[key] = dict_of_search_details
+    UPDATE_BALANCE_FROM_FINAL_DICT(FINAL_DICT, vote_type, testing)
+
+def PURE_LOG_DISTRIBUTION(TOTAL, my_array):
+   
+    new_dict = {}
+    num_members = len(my_array)
+
+    if len(my_array) == 1: #SINGLE ELEMENT
+        new_dict[TOTAL] = my_array[0]
+        return new_dict
+
+    for i in range(num_members):      
+        temp_holder = TOTAL / (2 ** (i+1))
+        if temp_holder < 0.01:
+            break # PROBABLY NOT WORTH HAVING THE ZEROES, WILLCREATE BUGS
+        else:
+            if my_array[i] not in new_dict: # IF NEW KEY
+                new_dict[my_array[i]] = temp_holder  
+            else:
+                new_dict[my_array[i]] += temp_holder 
+    
+    current_total = 0
+    for key, value in new_dict.items():
+        current_total += value
+
+    extra_amount = BROKEN_ROUNDING(TOTAL - current_total)
+    
+    j = 0 
+    for key, value in new_dict.items():
+        extra_dist = extra_amount / num_members
+        new_dict[key] = BROKEN_ROUNDING(new_dict[key] + extra_dist)
+        j+=1    
+
+    current_total_after_redo = 0
+    for key, value in new_dict.items():
+        current_total_after_redo += value
+    return new_dict
+
+
+def BROKEN_ROUNDING(my_float):
+  #truly too embarrassing to show anyone this
+  
+
+
+def EQUAL_DISTRIBUTION(TOTAL, my_array):
+    array_length = len(my_array)
+    each = BROKEN_ROUNDING(TOTAL / array_length)
+    new_dict = {}
+    for i in range(len(my_array)):
+        new_dict[my_array[i]] = BROKEN_ROUNDING(each)
+    
+    new_sum = 0
+    for key, value in new_dict.items():
+        new_sum  += value
+    TOTAL = BROKEN_ROUNDING(TOTAL) #TODO:THERE ARE PLACES WHERE PYTHONS DEFAULT ROUNDING WILL GO TERRIBLY WRONG
+    new_sum = BROKEN_ROUNDING(new_sum)
+    EXTRA_CAPITAL = TOTAL - new_sum
+    each_second = BROKEN_ROUNDING(EXTRA_CAPITAL / array_length)
+    for i in range(len(my_array)):
+        new_dict[my_array[i]] += BROKEN_ROUNDING(each_second)
+    new_sum = 0
+    for key, value in new_dict.items():
+        new_dict[key] = BROKEN_ROUNDING(value)
+        new_sum  += value
+    return new_dict
+
+
+def SECTIONED_EQUAL_DISTRIBUTION(TOTAL, my_array, sections=2):
+    """
+    NOTES: 1. i do not know why this is the case, but BUT SECTIONS HAVE TO  BE BELOW 195, makes no sense
+           2. I know there will be anomalies here so I wrapped it in a try catch, and just run the easier equal distribution anyway then log the error
+    """
+
+    try:
+        if sections == 1:
+            return EQUAL_DISTRIBUTION(TOTAL, my_array)
+        my_arrays = np.array_split(my_array, sections)
+
+        array_of_initial_amounts = 0
+        ordered_temp_array = []
+        for i in range(sections):
+            temp_holder = TOTAL / (2 ** (i+1))
+            if temp_holder < 0.01:
+                break
+
+            array_of_initial_amounts += temp_holder
+            ordered_temp_array.append(temp_holder)
+        
+        amount_left = TOTAL - array_of_initial_amounts
+        amount_left = BROKEN_ROUNDING(amount_left) 
+        dict_of_nums_arrays = {}
+        for i in range(len(ordered_temp_array)):
+            dict_of_nums_arrays[ordered_temp_array[i]] = my_arrays[i]
+
+        each_second = BROKEN_ROUNDING(amount_left / len(my_arrays))
+
+        keys_list = list(dict_of_nums_arrays.keys())
+        for i in range(len(keys_list)):
+            keys_list[i] = BROKEN_ROUNDING(keys_list[i] + each_second)
+
+        
+        dict_for_equal = {}
+        counter = 0
+        for key,value in dict_of_nums_arrays.items():
+            dict_for_equal[keys_list[counter]] = value
+            counter += 1
+        
+        second_counter_check = 0
+        FINAL_DICT = {}
+        for key, value in dict_for_equal.items():
+            second_counter_check += key
+            single_for_each = key / len(value)
+            for i in value:
+                #print(i)
+                if i in FINAL_DICT:
+                    FINAL_DICT[i] += BROKEN_ROUNDING(single_for_each)
+                else:
+                    FINAL_DICT[i] = BROKEN_ROUNDING(single_for_each)    
+        return FINAL_DICT
+    except Exception as e:
+        print("DISTRO ERROR, DOING EQUALITY", e)
+    #print("error", e)
+        return EQUAL_DISTRIBUTION(TOTAL, my_array)
+
+def CREATE_SEARCH_VOTE_FREQUNCY_DICT():
+    array_of_searches = GET_ALL_SEARCH_VOTES()
+    search_vote_freq_dict = {}
+    for i in array_of_searches:
+        #print(i)
+        if i[1] in search_vote_freq_dict:
+            # WHAT I NEED TO DO NEXT IS ATTACH ALL THE PEOPLE WHO VOTED FOR THIS DATASET IN AN ARRAY
+            search_vote_freq_dict[i[1]]['AMOUNT'] +=1
+            search_vote_freq_dict[i[1]]['SEARCHERS_LIST'].append(i[2])
+        else:
+            search_creator = GET_CREATOR_OF_SEARCH_ALGO_BY_SEARCH_ID(i[1])
+            search_vote_freq_dict[i[1]] = {"AMOUNT": 1, 'SEARCHERS_LIST': [i[2]], 'SEARCH_CREATOR': search_creator}
+    
+    TOTAL_NUM_SEARCH_VOTES = GET_NUM_SEARCH_VOTES()
+    for key, value in search_vote_freq_dict.items():
+        percentage = BROKEN_ROUNDING(value['AMOUNT'] / TOTAL_NUM_SEARCH_VOTES)
+        value['PERCENTAGE'] = percentage
+    
+    return search_vote_freq_dict
+
+
+
+
+
+
